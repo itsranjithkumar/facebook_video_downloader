@@ -1,6 +1,8 @@
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import yt_dlp
+import os
 
 app = FastAPI()
 
@@ -16,16 +18,15 @@ def download_facebook_video(url: str):
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info_dict = ydl.extract_info(url, download=False)  # Extract video info without downloading
-            video_title = info_dict.get('title', None)
-            video_url = info_dict.get('url', None)
+            info_dict = ydl.extract_info(url, download=True)  # Download the video
+            video_id = info_dict.get('id', None)
+            video_ext = info_dict.get('ext', 'mp4')
+            video_file = f"{video_id}.{video_ext}"  # Construct file name
 
-            if video_url:
-                # Download the video
-                ydl.download([url])
-                return {"status": "success", "title": video_title, "message": "Video downloaded successfully."}
+            if os.path.exists(video_file):
+                return video_file  # Return the path to the downloaded file
             else:
-                return {"status": "error", "message": "No valid video URL found."}
+                raise HTTPException(status_code=500, detail="Video file not found after download.")
     except yt_dlp.utils.DownloadError as e:
         raise HTTPException(status_code=500, detail=f"Download failed: {e}")
     except yt_dlp.utils.ExtractorError as e:
@@ -35,9 +36,10 @@ def download_facebook_video(url: str):
 
 @app.post("/download")
 async def download_video(video: VideoURL):
-    result = download_facebook_video(video.url)
-    return result
-
+    video_file = download_facebook_video(video.url)
+    
+    # Return the video file as a response
+    return FileResponse(video_file, media_type="video/mp4", filename=os.path.basename(video_file))
 
 @app.get("/")
 async def root():
